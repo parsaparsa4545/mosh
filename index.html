@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>شکار موش با دست</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    font-family: Tahoma, sans-serif;
+    color: white;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #gameContainer {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+  }
+
+  #video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    opacity: 1;
+    z-index: 0;
+  }
+
+  #videoOverlay {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      ellipse at center,
+      rgba(0,0,0,0.08) 0%,
+      rgba(0,0,0,0.30) 100%
+    );
+  }
+
+  #gameCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+
+  #hud {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 2;
+    background: rgba(0,0,0,0.6);
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-size: 20px;
+    border: 2px solid #00ffc3;
+    display: flex;
+    gap: 25px;
+    align-items: center;
+  }
+
+  #hud .p1 { color: #ff69b4; }
+  #hud .p2 { color: #ffd54f; }
+  #hud span.val { color: #00ffc3; font-weight: bold; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    text-align: center;
+    padding: 30px;
+  }
+
+  .overlay.hidden { display: none; }
+
+  .overlay h1 {
+    font-size: 42px;
+    color: #00ffc3;
+    text-shadow: 0 0 20px #00ffc3;
+  }
+
+  .overlay p {
+    font-size: 18px;
+    line-height: 1.9;
+    max-width: 600px;
+    color: #ddd;
+  }
+
+  .overlay button {
+    padding: 15px 45px;
+    font-size: 22px;
+    font-family: inherit;
+    background: linear-gradient(135deg, #00ffc3, #00a88f);
+    color: #111;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: transform 0.2s;
+    box-shadow: 0 0 25px rgba(0,255,195,0.5);
+  }
+
+  .overlay button:hover:not(:disabled) { transform: scale(1.05); }
+  .overlay button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+
+  .modeButtons {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .modeButtons button {
+    padding: 18px 35px;
+    font-size: 20px;
+    min-width: 180px;
+  }
+
+  #loadingMsg {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 5;
+    font-size: 22px;
+    color: #00ffc3;
+    text-align: center;
+    padding: 20px;
+  }
+
+  #divider {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 3px;
+    background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.6), transparent);
+    z-index: 2;
+    pointer-events: none;
+    display: none;
+  }
+  #divider.active { display: block; }
+
+  #divider .labelTop,
+  #divider .labelBottom {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    font-weight: bold;
+    white-space: nowrap;
+    padding: 4px 10px;
+    border-radius: 8px;
+  }
+  #divider .labelTop {
+    top: 10px;
+    color: #ff69b4;
+    background: rgba(0,0,0,0.6);
+  }
+  #divider .labelBottom {
+    bottom: 10px;
+    color: #ffd54f;
+    background: rgba(0,0,0,0.6);
+  }
+</style>
+</head>
+<body>
+
+<div id="gameContainer">
+  <video id="video" playsinline autoplay muted></video>
+  <div id="videoOverlay"></div>
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="divider">
+    <div class="labelTop">بازیکن ۱</div>
+    <div class="labelBottom">بازیکن ۲</div>
+  </div>
+
+  <div id="hud" style="display:none;">
+    <div id="hudP1" class="p1">بازیکن ۱: <span class="val" id="score1">0</span></div>
+    <div id="hudP2" class="p2" style="display:none;">بازیکن ۲: <span class="val" id="score2">0</span></div>
+    <div>زمان: <span class="val" id="timer">60</span></div>
+  </div>
+
+  <div id="loadingMsg">در حال راه‌اندازی دوربین...</div>
+
+  <!-- صفحه شروع: انتخاب حالت -->
+  <div class="overlay" id="startScreen">
+    <h1>🐭 شکار موش با دست</h1>
+    <p>
+      دستت رو جلوی دوربین بگیر.<br>
+      موش‌ها از بوته‌ها بیرون می‌پرن و باید با دست بگیریشون.<br>
+      هر موش ۱ امتیاز داره. ۶۰ ثانیه فرصت داری!
+    </p>
+    <div class="modeButtons">
+      <button id="btn1p" disabled>👤 ۱ نفره (۲ دست)</button>
+      <button id="btn2p" disabled>👥 ۲ نفره (۴ دست)</button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="endScreen">
+    <h1>پایان بازی!</h1>
+    <p id="finalResult">امتیاز نهایی</p>
+    <button id="restartBtn">بازی مجدد</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+<script>
+// ======================= تنظیمات =======================
+const CONFIG = {
+  GAME_DURATION: 60,
+  MAX_MICE: 6,
+  MOUSE_LIFETIME: 2800,
+  SPAWN_INTERVAL: 800,
+  MOUSE_RADIUS: 70,
+  HIT_COOLDOWN: 150,
+  DETECT_EVERY_N_FRAMES: 1,
+  BUSH_MARGIN: 5,
+  LERP_FACTOR: 0.45,
+  JUMP_THRESHOLD: 250,
+  BUSH_RADIUS_X: 55,
+  BUSH_RADIUS_Y: 28,
+};
+
+// ======================= تصویر موش =======================
+const MOUSE_IMAGE_SRC = "ham.png"; // ← اینجا تصویر موش رو بذار (URL یا Base64 یا مسیر فایل)
+
+const mouseImage = new Image();
+let mouseImageReady = false;
+if (MOUSE_IMAGE_SRC) {
+  mouseImage.src = MOUSE_IMAGE_SRC;
+  mouseImage.onload = () => { mouseImageReady = true; };
+  mouseImage.onerror = () => {
+    console.warn('تصویر موش بارگذاری نشد؛ از رسم پیش‌فرض استفاده می‌شود.');
+    mouseImageReady = false;
+  };
+}
+
+// ======================= عناصر DOM =======================
+const video = document.getElementById('video');
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const score1El = document.getElementById('score1');
+const score2El = document.getElementById('score2');
+const timerEl = document.getElementById('timer');
+const startScreen = document.getElementById('startScreen');
+const endScreen = document.getElementById('endScreen');
+const finalResultEl = document.getElementById('finalResult');
+const btn1p = document.getElementById('btn1p');
+const btn2p = document.getElementById('btn2p');
+const restartBtn = document.getElementById('restartBtn');
+const loadingMsg = document.getElementById('loadingMsg');
+const hud = document.getElementById('hud');
+const hudP2 = document.getElementById('hudP2');
+const divider = document.getElementById('divider');
+
+// ======================= وضعیت بازی =======================
+let playerMode = 1;         // 1 یا 2
+let handPoints = [];        // آرایه نقاط دست: { x, y, hand, player, color }
+let smoothHandPoints = [];
+let mice = [];
+let bushes = [];
+let particles = [];
+let scores = { p1: 0, p2: 0 };
+let timeLeft = CONFIG.GAME_DURATION;
+let gameRunning = false;
+let lastSpawn = 0;
+let lastHitTime = 0;
+let gameStartTime = 0;
+let animationId = null;
+
+// ======================= اندازه‌بندی کانواس =======================
+function resizeCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  generateBushes();
+}
+window.addEventListener('resize', resizeCanvas);
+
+function getW() { return window.innerWidth; }
+function getH() { return window.innerHeight; }
+
+// ======================= ساخت بوته‌ها =======================
+function generateBushes() {
+  bushes = [];
+  const W = getW(), H = getH();
+  const M = CONFIG.BUSH_MARGIN;
+  const EDGE_SPACING = 120;
+
+  const topCount = Math.floor(W / EDGE_SPACING);
+  for (let i = 0; i < topCount; i++) {
+    bushes.push({ x: (W / topCount) * (i + 0.5), y: M, dir: 'top' });
+  }
+  const bottomCount = Math.floor(W / EDGE_SPACING);
+  for (let i = 0; i < bottomCount; i++) {
+    bushes.push({ x: (W / bottomCount) * (i + 0.5), y: H - M, dir: 'bottom' });
+  }
+  const leftCount = Math.floor(H / EDGE_SPACING);
+  for (let i = 0; i < leftCount; i++) {
+    const y = (H / leftCount) * (i + 0.5);
+    if (y < 80 || y > H - 80) continue;
+    bushes.push({ x: M, y, dir: 'left' });
+  }
+  const rightCount = Math.floor(H / EDGE_SPACING);
+  for (let i = 0; i < rightCount; i++) {
+    const y = (H / rightCount) * (i + 0.5);
+    if (y < 80 || y > H - 80) continue;
+    bushes.push({ x: W - M, y, dir: 'right' });
+  }
+}
+
+// ======================= کلاس موش =======================
+class Mouse {
+  constructor(bush) {
+    this.bush = bush;
+    this.x = bush.x;
+    this.y = bush.y;
+    this.dir = bush.dir;
+    this.radius = CONFIG.MOUSE_RADIUS;
+    this.bornAt = performance.now();
+    this.dead = false;
+    this.hit = false;
+    this.emergeProgress = 0;
+    this.wobble = Math.random() * 10;
+
+    switch (this.dir) {
+      case 'top':    this.dx = 0;  this.dy = 1;  break;
+      case 'bottom': this.dx = 0;  this.dy = -1; break;
+      case 'left':   this.dx = 1;  this.dy = 0;  break;
+      case 'right':  this.dx = -1; this.dy = 0;  break;
+    }
+  }
+
+  getCurrentX() { return this.x + this.dx * this.emergeProgress * this.radius * 1.5; }
+  getCurrentY() { return this.y + this.dy * this.emergeProgress * this.radius * 1.5; }
+
+  update(now) {
+    const age = now - this.bornAt;
+    this.emergeProgress = Math.min(1, age / 400);
+    if (age > CONFIG.MOUSE_LIFETIME) this.dead = true;
+  }
+
+  draw(ctx) {
+    const scale = this.emergeProgress;
+    const r = this.radius * scale;
+    if (r <= 0.5) return;
+
+    const cx = this.getCurrentX();
+    const cy = this.getCurrentY();
+
+    let angle = 0;
+    switch (this.dir) {
+      case 'top':    angle = Math.PI;    break;
+      case 'bottom': angle = 0;          break;
+      case 'left':   angle = -Math.PI/2; break;
+      case 'right':  angle = Math.PI/2;  break;
+    }
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+
+    if (mouseImageReady) {
+      const imgW = r * 2.2;
+      const imgH = r * 2.2;
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.7, r * 0.8, r * 0.25, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fill();
+      ctx.drawImage(mouseImage, -imgW/2, -imgH/2, imgW, imgH);
+    } else {
+      // رسم پیش‌فرض
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.6, r * 0.8, r * 0.3, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      const grad = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
+      grad.addColorStop(0, '#b0b0b0');
+      grad.addColorStop(1, '#555');
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(-r * 0.65, -r * 0.65, r * 0.4, 0, Math.PI * 2);
+      ctx.arc(r * 0.65, -r * 0.65, r * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = '#999';
+      ctx.fill();
+      ctx.strokeStyle = '#333';
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(-r * 0.65, -r * 0.65, r * 0.22, 0, Math.PI * 2);
+      ctx.arc(r * 0.65, -r * 0.65, r * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = '#f5a0b5';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(-r * 0.35, -r * 0.1, r * 0.14, 0, Math.PI * 2);
+      ctx.arc(r * 0.35, -r * 0.1, r * 0.14, 0, Math.PI * 2);
+      ctx.fillStyle = '#000';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(0, r * 0.2, r * 0.1, 0, Math.PI * 2);
+      ctx.fillStyle = '#f06292';
+      ctx.fill();
+
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1.5;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.1, r * 0.25);
+        ctx.lineTo(-r * 0.9, r * 0.15 + i * r * 0.15);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(r * 0.1, r * 0.25);
+        ctx.lineTo(r * 0.9, r * 0.15 + i * r * 0.15);
+        ctx.stroke();
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(0, r * 0.9);
+      ctx.quadraticCurveTo(r * 0.8 + Math.sin(this.wobble) * r * 0.3, r * 1.2, r * 0.5, r * 1.6);
+      ctx.strokeStyle = '#f5a0b5';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+}
+
+// ======================= ذرات =======================
+function spawnParticles(x, y, color) {
+  const colors = [color || '#ffeb3b', '#ff9800', '#f44336', '#00ffc3'];
+  for (let i = 0; i < 15; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 4;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size: 3 + Math.random() * 5,
+    });
+  }
+}
+
+function updateParticles() {
+  particles = particles.filter(p => p.life > 0);
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.15;
+    p.life -= 0.03;
+  }
+  particles = particles.filter(p => p.life > 0);
+}
+
+function drawParticles(ctx) {
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    if (p.life <= 0) continue;
+    const radius = Math.max(0.5, p.size * p.life);
+    ctx.globalAlpha = Math.max(0, Math.min(1, p.life));
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ======================= رسم بوته‌ها =======================
+function drawBushes(ctx) {
+  const t = performance.now() / 1000;
+  for (let i = 0; i < bushes.length; i++) {
+    const b = bushes[i];
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    let rot = 0;
+    switch (b.dir) {
+      case 'top':    rot = 0;          break;
+      case 'bottom': rot = Math.PI;    break;
+      case 'left':   rot = -Math.PI/2; break;
+      case 'right':  rot = Math.PI/2;  break;
+    }
+    ctx.rotate(rot);
+
+    const rx = CONFIG.BUSH_RADIUS_X;
+    const ry = CONFIG.BUSH_RADIUS_Y;
+
+    ctx.beginPath();
+    ctx.ellipse(0, ry * 0.2, rx * 1.05, ry * 0.55, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fill();
+
+    const leaves = [
+      { x: -rx * 0.55, y: -ry * 0.1, r: rx * 0.42, c: '#1f7a3a' },
+      { x:  rx * 0.55, y: -ry * 0.1, r: rx * 0.42, c: '#1f7a3a' },
+      { x:  0,          y: -ry * 0.45, r: rx * 0.5,  c: '#2e9e4a' },
+      { x: -rx * 0.25, y: -ry * 0.25, r: rx * 0.38, c: '#36b356' },
+      { x:  rx * 0.25, y: -ry * 0.25, r: rx * 0.38, c: '#36b356' },
+      { x:  0,          y:  0,        r: rx * 0.5,  c: '#2a8f43' },
+    ];
+    for (let k = 0; k < leaves.length; k++) {
+      const L = leaves[k];
+      ctx.beginPath();
+      ctx.arc(L.x, L.y, L.r, 0, Math.PI * 2);
+      ctx.fillStyle = L.c;
+      ctx.fill();
+    }
+
+    ctx.strokeStyle = 'rgba(120,220,150,0.9)';
+    ctx.lineWidth = 2;
+    for (let k = 0; k < 5; k++) {
+      const ang = (-Math.PI * 0.9) + k * (Math.PI * 0.45);
+      const wob = Math.sin(t * 2 + k + i) * 0.08;
+      const len = rx * 0.55;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(
+        Math.cos(ang + wob) * len * 0.5, Math.sin(ang + wob) * len * 0.5 - ry * 0.3,
+        Math.cos(ang + wob) * len,       Math.sin(ang + wob) * len - ry * 0.4
+      );
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+}
+
+// ======================= درون‌یابی نقاط دست =======================
+// درون‌یابی بر اساس کلید (player + hand) انجام می‌شود تا اگر ترتیب دست‌ها تغییر کرد،
+// نقاط به هم نپرند.
+function interpolateHandPoints() {
+  // ساخت نقشه‌ای از نقاط هدف با کلید
+  const targetMap = new Map();
+  for (const p of handPoints) {
+    targetMap.set(p.player + '_' + p.hand, p);
+  }
+  const smoothMap = new Map();
+  for (const p of smoothHandPoints) {
+    smoothMap.set(p.player + '_' + p.hand, p);
+  }
+
+  const k = CONFIG.LERP_FACTOR;
+  const newSmooth = [];
+
+  for (const [key, target] of targetMap) {
+    const cur = smoothMap.get(key);
+    if (!cur) {
+      // دست جدید → مستقیم جای‌گذاری
+      newSmooth.push({ x: target.x, y: target.y, hand: target.hand, player: target.player, color: target.color });
+      continue;
+    }
+    const dx = target.x - cur.x;
+    const dy = target.y - cur.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > CONFIG.JUMP_THRESHOLD) {
+      cur.x = target.x;
+      cur.y = target.y;
+    } else {
+      cur.x += dx * k;
+      cur.y += dy * k;
+    }
+    cur.hand = target.hand;
+    cur.player = target.player;
+    cur.color = target.color;
+    newSmooth.push(cur);
+  }
+  smoothHandPoints = newSmooth;
+}
+
+// ======================= رسم نشانگر دست =======================
+// برای هر دست یک نشانگر مجزا با رنگ اختصاصی
+function drawHandPointers(ctx) {
+  const pulse = 0.5 + 0.3 * Math.sin(performance.now() / 200);
+  for (let i = 0; i < smoothHandPoints.length; i++) {
+    const pos = smoothHandPoints[i];
+    const rgb = pos.color || '0,255,195';
+
+    // حلقه بیرونی
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 38, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${rgb},${pulse})`;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // حلقه دوم
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 22, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${rgb},0.7)`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // دایره میانی
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${rgb},0.35)`;
+    ctx.fill();
+
+    // نقطه مرکزی
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${rgb},0.95)`;
+    ctx.fill();
+
+    // نقطه سفید
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+
+    // برچسب کوچک نام بازیکن
+    ctx.font = 'bold 12px Tahoma';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `rgba(${rgb},0.95)`;
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.lineWidth = 3;
+    const label = 'P' + pos.player;
+    ctx.strokeText(label, pos.x, pos.y - 48);
+    ctx.fillText(label, pos.x, pos.y - 48);
+  }
+}
+
+// ======================= تولید موش =======================
+function spawnMouse() {
+  const occupied = new Set(mice.map(m => m.bush));
+  const available = bushes.filter(b => !occupied.has(b));
+  if (available.length === 0) return;
+  const bush = available[Math.floor(Math.random() * available.length)];
+  mice.push(new Mouse(bush));
+}
+
+// ======================= بررسی برخورد =======================
+function checkHits(now) {
+  if (smoothHandPoints.length === 0) return;
+
+  for (let i = mice.length - 1; i >= 0; i--) {
+    const m = mice[i];
+    if (m.hit || m.emergeProgress < 0.4) continue;
+
+    const mx = m.getCurrentX();
+    const my = m.getCurrentY();
+
+    for (let j = 0; j < smoothHandPoints.length; j++) {
+      const pos = smoothHandPoints[j];
+      const dx = pos.x - mx;
+      const dy = pos.y - my;
+      const distSq = dx * dx + dy * dy;
+      const hitR = m.radius + 25;
+      if (distSq < hitR * hitR) {
+        m.hit = true;
+        m.dead = true;
+        // امتیاز به بازیکن مربوطه
+        if (pos.player === 2) {
+          scores.p2++;
+          score2El.textContent = scores.p2;
+        } else {
+          scores.p1++;
+          score1El.textContent = scores.p1;
+        }
+        spawnParticles(mx, my, pos.color ? `rgb(${pos.color})` : '#00ffc3');
+        lastHitTime = now;
+        break;
+      }
+    }
+  }
+}
+
+// ======================= حلقه اصلی بازی =======================
+function gameLoop(now) {
+  if (!gameRunning) return;
+
+  try {
+    if (!now) now = performance.now();
+
+    interpolateHandPoints();
+
+    ctx.clearRect(0, 0, getW(), getH());
+
+    drawBushes(ctx);
+
+    for (let i = mice.length - 1; i >= 0; i--) {
+      mice[i].update(now);
+      if (mice[i].dead) mice.splice(i, 1);
+    }
+
+    const sortedMice = [...mice].sort((a, b) => {
+      const order = { top: 0, left: 1, right: 2, bottom: 3 };
+      return (order[a.dir] || 0) - (order[b.dir] || 0);
+    });
+    for (let i = 0; i < sortedMice.length; i++) sortedMice[i].draw(ctx);
+
+    updateParticles();
+    drawParticles(ctx);
+
+    drawHandPointers(ctx);
+
+    if (now - lastSpawn > CONFIG.SPAWN_INTERVAL && mice.length < CONFIG.MAX_MICE) {
+      spawnMouse();
+      lastSpawn = now;
+    }
+
+    if (now - lastHitTime > CONFIG.HIT_COOLDOWN) {
+      checkHits(now);
+    }
+
+    const elapsed = (now - gameStartTime) / 1000;
+    timeLeft = Math.max(0, Math.ceil(CONFIG.GAME_DURATION - elapsed));
+    timerEl.textContent = timeLeft;
+
+    if (timeLeft <= 0) {
+      endGame();
+      return;
+    }
+  } catch (err) {
+    console.error('خطا در حلقه بازی:', err);
+  }
+
+  animationId = requestAnimationFrame(gameLoop);
+}
+
+// ======================= شروع / پایان =======================
+function startGame(mode) {
+  playerMode = mode;
+
+  startScreen.classList.add('hidden');
+  endScreen.classList.add('hidden');
+  hud.style.display = 'flex';
+  loadingMsg.style.display = 'none';
+
+  if (mode === 2) {
+    hudP2.style.display = 'block';
+    divider.classList.add('active');
+  } else {
+    hudP2.style.display = 'none';
+    divider.classList.remove('active');
+  }
+
+  scores = { p1: 0, p2: 0 };
+  score1El.textContent = 0;
+  score2El.textContent = 0;
+  timeLeft = CONFIG.GAME_DURATION;
+  timerEl.textContent = CONFIG.GAME_DURATION;
+  mice = [];
+  particles = [];
+  handPoints = [];
+  smoothHandPoints = [];
+  lastSpawn = performance.now();
+  lastHitTime = 0;
+  gameStartTime = performance.now();
+  gameRunning = true;
+
+  if (animationId) cancelAnimationFrame(animationId);
+  animationId = requestAnimationFrame(gameLoop);
+}
+
+function endGame() {
+  gameRunning = false;
+  if (animationId) cancelAnimationFrame(animationId);
+  mice = [];
+  particles = [];
+  ctx.clearRect(0, 0, getW(), getH());
+
+  if (playerMode === 1) {
+    finalResultEl.innerHTML = `امتیاز نهایی: <span style="color:#00ffc3;font-size:28px;font-weight:bold">${scores.p1}</span>`;
+  } else {
+    let winner = '';
+    if (scores.p1 > scores.p2) winner = '🏆 بازیکن ۱ برنده شد!';
+    else if (scores.p2 > scores.p1) winner = '🏆 بازیکن ۲ برنده شد!';
+    else winner = '🤝 مساوی!';
+    finalResultEl.innerHTML = `
+      <span style="color:#ff69b4">بازیکن ۱: ${scores.p1}</span><br>
+      <span style="color:#ffd54f">بازیکن ۲: ${scores.p2}</span><br>
+      <span style="color:#00ffc3;font-size:24px;font-weight:bold">${winner}</span>
+    `;
+  }
+  endScreen.classList.remove('hidden');
+}
+
+// ======================= MediaPipe Hands =======================
+// دو نمونه جداگانه برای پشتیبانی از ۴ دست در حالت ۲ نفره.
+// نمونه ۱: نیمه چپ تصویر (پس از آینه‌شدن، سمت راست بازیکن ۱)
+// نمونه ۲: نیمه راست تصویر
+// راه‌حل: فریم کامل را به هر دو می‌دهیم، اما maxNumHands هر کدام ۲ است؛
+// برای تفکیک، از موقعیت افقی دست در تصویر استفاده می‌کنیم.
+
+const hands = new Hands({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+});
+hands.setOptions({
+  maxNumHands: 4,   // تلاش برای ۴ دست (در برخی نسخه‌ها فقط ۲ پشتیبانی می‌شود)
+  modelComplexity: 0,
+  minDetectionConfidence: 0.5,
+  minTrackingConfidence: 0.5,
+});
+
+let handDetectionResults = null;
+
+hands.onResults((results) => {
+  handDetectionResults = results;
+});
+
+function processHandResults() {
+  const results = handDetectionResults;
+  handPoints = [];
+  if (!results || !results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+
+  const W = getW();
+  const halfW = W / 2;
+
+  for (let h = 0; h < results.multiHandLandmarks.length; h++) {
+    const landmarks = results.multiHandLandmarks[h];
+
+    let handLabel = 'right';
+    if (results.multiHandedness && results.multiHandedness[h]) {
+      const raw = results.multiHandedness[h].label;
+      handLabel = raw === 'Left' ? 'left' : 'right';
+    }
+
+    // نقطه مچ دست برای تشخیص بازیکن (بر اساس موقعیت افقی)
+    const wrist = landmarks[0];
+    const screenX = (1 - wrist.x) * W;  // پس از آینه‌شدن
+
+    let player = 1;
+    let color = handLabel === 'left' ? '255,105,180' : '0,255,195'; // بازیکن ۱
+
+    if (playerMode === 2) {
+      // در حالت ۲ نفره، بازیکن ۱ در نیمه چپ صفحه، بازیکن ۲ در نیمه راست
+      if (screenX > halfW) {
+        player = 2;
+        color = handLabel === 'left' ? '255,213,79' : '186,104,200'; // بازیکن ۲: زرد/بنفش
+      }
+    }
+
+    const tips = [4, 8, 12, 16, 20];
+    for (let k = 0; k < tips.length; k++) {
+      const lm = landmarks[tips[k]];
+      handPoints.push({
+        x: (1 - lm.x) * W,
+        y: lm.y * getH(),
+        hand: handLabel,
+        player: player,
+        color: color,
+      });
+    }
+  }
+}
+
+// ======================= راه‌اندازی دوربین =======================
+let frameCounter = 0;
+let camera = null;
+
+async function initCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 1280, height: 720, facingMode: 'user' },
+      audio: false,
+    });
+    video.srcObject = stream;
+
+    await new Promise((resolve) => {
+      if (video.readyState >= 1) return resolve();
+      video.onloadedmetadata = () => {
+        video.play();
+        resolve();
+      };
+    });
+
+    camera = new Camera(video, {
+      onFrame: async () => {
+        frameCounter++;
+        if (frameCounter % CONFIG.DETECT_EVERY_N_FRAMES !== 0) return;
+        try {
+          await hands.send({ image: video });
+          processHandResults();
+        } catch (e) {
+          console.warn('خطای تشخیص دست:', e);
+        }
+      },
+      width: 1280,
+      height: 720,
+    });
+
+    await camera.start();
+
+    loadingMsg.textContent = 'دوربین آماده است!';
+    btn1p.disabled = false;
+    btn2p.disabled = false;
+    setTimeout(() => { loadingMsg.style.display = 'none'; }, 1500);
+
+  } catch (err) {
+    console.error('خطا در راه‌اندازی دوربین:', err);
+    loadingMsg.innerHTML = '❌ دسترسی به دوربین ممکن نشد.<br>لطفاً اجازه دسترسی بده و صفحه رو رفرش کن.';
+    btn1p.disabled = false;
+    btn2p.disabled = false;
+  }
+}
+
+// ======================= رویدادها =======================
+btn1p.addEventListener('click', () => startGame(1));
+btn2p.addEventListener('click', () => startGame(2));
+restartBtn.addEventListener('click', () => {
+  endScreen.classList.add('hidden');
+  startScreen.classList.remove('hidden');
+});
+
+// ======================= راه‌اندازی اولیه =======================
+window.addEventListener('load', () => {
+  resizeCanvas();
+  initCamera();
+});
+</script>
+</body>
+</html>
